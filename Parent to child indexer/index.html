@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ordinals Parent to Child Indexer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f8f8f8;
+      color: #333;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+    }
+    h1 {
+      color: #ff6600;
+    }
+    input, textarea, button {
+      font-size: 1rem;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #ff6600;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #e65c00;
+    }
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-right: 1rem;
+      font-size: 1rem;
+    }
+    #exportButtons button {
+      width: auto;
+      margin-right: 1rem;
+    }
+    #output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+      .toggle-group {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .toggle-button {
+      flex: 1;
+      text-align: center;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      background-color: white;
+      color: #333;
+      cursor: pointer;
+      transition: background-color 0.2s, border-color 0.2s;
+      border-radius: 4px 4px 4px 4px;
+    }
+    .toggle-button:last-child {
+      border-left: none;
+      border-radius: 4px 4px 4px 4px;
+    }
+    .toggle-button:hover {
+      border-color: #999;
+    }
+    .toggle-button.active {
+      border-color: #ff6600;
+      color: #ff6600;
+      border-color: #ff6600;
+    }
+</style>
+</head>
+<body>
+  <h1>Ordinals Parent to Child Indexer</h1>
+  <input id="parentId" placeholder="Parent Ordinal ID" />
+  <br>
+  <div class="toggle-group">
+    <div class="toggle-button" id="metaYes" onclick="selectMetaOption('yes')">Include meta</div>
+    <div class="toggle-button active" id="metaNo" onclick="selectMetaOption('no')">No meta</div>
+    <input type="radio" name="includeMeta" value="yes" id="radioYes" style="display:none" onchange="toggleMetaFields()">
+    <input type="radio" name="includeMeta" value="no" id="radioNo" style="display:none" checked onchange="toggleMetaFields()">
+  </div>
+  <br><br>
+  <div id="metaFields">
+    <input id="assetName" placeholder="Asset Name (e.g. Bitcoin Bandit)" />
+    <input id="traitType" placeholder="Trait Type (e.g. Clan)" />
+    <input id="traitValue" placeholder="Trait Value (e.g. Aoi)" />
+  </div>
+  <button onclick="generateJSON()">Generate JSON</button>
+  <div id="childCount" style="margin-top: 1rem; font-weight: bold;"></div>
+  <div id="exportButtons" style="margin-bottom: 1rem; display: none;">
+    <button onclick="downloadJSON()">Download JSON</button>
+    <button onclick="copyJSON()">Copy to Clipboard</button>
+  </div>
+  <pre id="output" style="margin-top: 1rem; padding: 1rem; display: none;"></pre>
+
+  <script>
+    function toggleMetaFields() {
+      const includeMeta = document.querySelector('input[name="includeMeta"]:checked').value === 'yes';
+      document.getElementById('metaFields').style.display = includeMeta ? 'block' : 'none';
+    }
+
+    async function fetchAllChildren(parentId) {
+      let allChildren = [];
+      let page = 0;
+      let keepFetching = true;
+
+      while (keepFetching) {
+        const url = `https://ordinals.com/r/children/${parentId}/${page}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
+        const data = await res.json();
+
+        if (!data.ids || data.ids.length === 0) break;
+        allChildren = allChildren.concat(data.ids);
+        if (!data.more || data.ids.length < 100) keepFetching = false;
+        else page++;
+      }
+
+      return allChildren;
+    }
+
+    async function generateJSON() {
+      const parentId = document.getElementById('parentId').value.trim();
+      const output = document.getElementById('output');
+      const includeMeta = document.querySelector('input[name="includeMeta"]:checked').value === 'yes';
+      const assetName = document.getElementById('assetName').value.trim();
+      const traitType = document.getElementById('traitType').value.trim();
+      const traitValue = document.getElementById('traitValue').value.trim();
+
+      if (!parentId) {
+        alert('Parent ID is required');
+        return;
+      }
+
+      try {
+        output.textContent = 'Fetching data...';
+        const children = await fetchAllChildren(parentId);
+
+        const attributes = (traitType && traitValue) ? [{ trait_type: traitType, value: traitValue }] : [];
+
+        const result = children.map((id, index) => {
+          const entry = { id };
+          if (includeMeta) {
+            entry.meta = {};
+            if (assetName) entry.meta.name = `${assetName} #${index + 1}`;
+            if (attributes.length > 0) entry.meta.attributes = attributes;
+          }
+          return entry;
+        });
+
+        document.getElementById('childCount').textContent = `Total children: ${children.length}`;
+        document.getElementById('exportButtons').style.display = 'block';
+        document.getElementById('exportButtons').style.display = 'block';
+        output.style.display = 'block';
+        output.textContent = JSON.stringify(result, null, 2);
+      } catch (error) {
+        output.textContent = 'Error: ' + error.message;
+      }
+    }
+
+    function downloadJSON() {
+      const dataStr = document.getElementById('output').textContent;
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ordinal-children.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function copyJSON() {
+      const text = document.getElementById('output').textContent;
+      navigator.clipboard.writeText(text)
+        .then(() => alert('JSON copied to clipboard'))
+        .catch(err => alert('Failed to copy JSON: ' + err));
+    }
+
+    toggleMetaFields();
+      function selectMetaOption(value) {
+      document.getElementById('radioYes').checked = value === 'yes';
+      document.getElementById('radioNo').checked = value === 'no';
+      document.getElementById('metaYes').classList.toggle('active', value === 'yes');
+      document.getElementById('metaNo').classList.toggle('active', value === 'no');
+      toggleMetaFields();
+    }
+</script>
+<div style="position: fixed; bottom: 5%; left: 50%; transform: translateX(-50%); text-align: center; font-size: 0.9rem; color: #777;">
+    Made with ❤️ by <strong style="color: #ff6600;">9iNE</strong>
+  </div>
+</body>
+</html>
